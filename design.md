@@ -35,3 +35,13 @@ malformed UTF-8/JSON, incomplete streams and unknown validation keywords fail.
 Compatible endpoints must match the declared protocol; non-compatible providers
 need an additional adapter, not ad-hoc business-side HTTP code. This release has
 no native Anthropic/Gemini adapter, embedding index or automatic tokenizer.
+
+## 5. Explicit image input
+
+ImageInput is owned request data, authorized by the application and gated by
+supportsVision. Validation bounds image count and request bytes, validates the
+data URL media type/base64 shape and restricts images to user messages. Only
+Chat image_url and Responses input_image are encoded; no URL downloading or
+provider capability inference. Callers may discard older frames from their prompt
+while retaining a separately governed archive. Tests use loopback providers;
+public model vision quality and provider-specific limits remain deployment checks.

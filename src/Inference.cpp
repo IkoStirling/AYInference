@@ -72,6 +72,15 @@ Result invoke(const ModelProfile& profile, const Request& request) {
     for (const auto& message : request.messages) {
         if (message.role != "system" && message.role != "developer" && message.role != "user" && message.role != "assistant") return failure(Status::Invalid);
         inputBytes += message.text.size(); if (inputBytes > profile.maxRequestBytes) return failure(Status::Limit);
+        if(!message.images.empty()&&(!profile.supportsVision||message.role!="user"))return failure(Status::Unsupported);
+        if(message.images.size()>8)return failure(Status::Limit);
+        for(const auto& image:message.images){
+            inputBytes+=image.dataUrl.size();if(inputBytes>profile.maxRequestBytes)return failure(Status::Limit);
+            bool prefix=false;for(const auto* mime:{"jpeg","png","webp","gif"})if(image.dataUrl.starts_with(std::string("data:image/")+mime+";base64,"))prefix=true;
+            const auto comma=image.dataUrl.find(',');if(!prefix||comma==std::string::npos||comma+1==image.dataUrl.size()||(image.detail!="auto"&&image.detail!="low"&&image.detail!="high"))return failure(Status::Invalid);
+            const auto data=std::string_view(image.dataUrl).substr(comma+1);if(data.size()%4||!std::all_of(data.begin(),data.end(),[](unsigned char c){return (c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='+'||c=='/'||c=='=';}))return failure(Status::Invalid);
+            const auto padding=data.find('=');if(padding!=std::string_view::npos&&(padding+2<data.size()||!std::all_of(data.begin()+padding,data.end(),[](char c){return c=='=';})))return failure(Status::Invalid);
+        }
     }
     if (!request.outputSchema.empty()) {
         auto validation = serializer::validateJsonSchema(request.outputSchema);
@@ -90,7 +99,12 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         if ((!profile.credentialEnvironment.empty() && credential.empty()) || (!loopback(profile.origin) && credential.empty())) return failure(Status::CredentialMissing);
         const bool responses = profile.protocol == Protocol::Responses;
         Json body{{"model", profile.model}, {"stream", static_cast<bool>(request.onText)}};
-        Json messages = Json::array(); for (const auto& message : request.messages) messages.push_back({{"role",message.role},{"content",message.text}});
+        Json messages = Json::array();for(const auto& message:request.messages){
+            if(message.images.empty()){messages.push_back({{"role",message.role},{"content",message.text}});continue;}
+            Json parts=Json::array();if(!message.text.empty())parts.push_back({{"type",responses?"input_text":"text"},{"text",message.text}});
+            for(const auto& image:message.images)if(responses)parts.push_back({{"type","input_image"},{"image_url",image.dataUrl},{"detail",image.detail}});else parts.push_back({{"type","image_url"},{"image_url",{{"url",image.dataUrl},{"detail",image.detail}}}});
+            messages.push_back({{"role",message.role},{"content",parts}});
+        }
         body[responses ? "input" : "messages"] = std::move(messages);
         body[responses ? "max_output_tokens" : profile.legacyMaxTokens ? "max_tokens" : "max_completion_tokens"] = request.maxOutputTokens;
         if (responses) body["store"] = false;
@@ -105,6 +119,7 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         wire.headers = {{"Content-Type","application/json"}};
         if (!credential.empty()) wire.headers.emplace_back("Authorization", "Bearer " + credential);
         wire.timeout = profile.timeout; wire.maxResponseBytes = profile.maxResponseBytes; wire.cancelled = request.cancelled;
+        wire.proxyOrigin=profile.proxyOrigin;wire.useSystemProxy=profile.useSystemProxy;
         bool finished = false, doneMarker = false, refused = false, malformed = false, userStopped = false;
         Sse sse;
         sse.dispatch = [&](std::string_view data) {

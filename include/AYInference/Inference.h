@@ -21,13 +21,24 @@ struct ModelProfile {
     bool supportsJsonSchema = false;
     bool supportsStreaming = true;
     bool legacyMaxTokens = false;
+    /// Explicit opt-in to user-message images. No model-name inference.
+    bool supportsVision = false;
     std::chrono::milliseconds timeout{30000};
     std::size_t maxRequestBytes = 2 * 1024 * 1024;
     std::size_t maxResponseBytes = 4 * 1024 * 1024;
     std::uint32_t maxOutputTokensPerCall = 8192;
     std::string mockOutput = "{}";
+    /// Optional explicit HTTP proxy or opt-in Windows manual proxy configuration.
+    std::string proxyOrigin;
+    bool useSystemProxy = false;
 };
-struct Message { std::string role, text; };
+struct ImageInput {
+    /// Bounded data:image/{jpeg,png,webp,gif};base64,... only. This API never
+    /// fetches an arbitrary image URL or exposes a local file path to a provider.
+    std::string dataUrl;
+    std::string detail = "auto"; // auto / low / high
+};
+struct Message { std::string role, text; std::vector<ImageInput> images; };
 struct Request {
     std::vector<Message> messages;
     std::string outputSchema;

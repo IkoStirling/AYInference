@@ -50,6 +50,23 @@ if (result) { /* validate business policy, then commit */ }
 Tests: `AYInference_Tests`, local fake providers for both protocols and split SSE.
 No live provider/key usage is included in the offline gate.
 
+`ModelProfile::supportsVision` explicitly opts in image input. User `Message`
+values may include owned `ImageInput{dataUrl, detail}` entries. Only bounded
+base64 JPEG/PNG/WebP/GIF data URLs are accepted; remote URLs, file paths and images
+on system/assistant messages reject before networking. Chat uses image_url content
+parts; Responses uses input_image. The engine does not fetch, interpret or retain
+images automatically. Text-only profiles remain unchanged; request byte limits
+also include image data. Fixture tests verify both wire shapes and rejection.
+
+Image protocol reference, accessed2026-10-25:
+[Images and vision](https://developers.openai.com/api/docs/guides/images-vision).
+
+ModelProfile.proxyOrigin/useSystemProxy forward explicit HTTP proxy or opt-in
+Windows manual proxy selection to AYNetworkHttp. Defaults remain direct in this
+module; the host chooses its own default. Model credentials stay in the target
+HTTPS request, not a proxy URL or plaintext settings field. Proxy authentication
+and automatic PAC resolution are outside the current transport.
+
 Protocol sources, accessed 2026-10-24:
 [Structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
 [Responses migration](https://developers.openai.com/api/docs/guides/migrate-to-responses).
