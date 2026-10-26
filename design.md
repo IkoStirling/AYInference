@@ -69,3 +69,5 @@ reads the authoritative completed output rather than provisional arguments. Fina
 response text can replace mismatching tentative text. Cancellation/refusal and
 incomplete completion clear every candidate. Unstructured tags are ordinary text,
 not an alternate execution channel.
+
+Wire response bytes include SSE framing, repeated completed-event payloads and non-visible provider channels. A transport byte-limit failure retains a response_bytes diagnostic at /limits/response_bytes and clears all partial text/proposals. The caller chooses its bounded raw-wire allowance independently from output-token and visible-text budgets.

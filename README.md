@@ -1,5 +1,9 @@
 # AYInference
 
+Response wire-size limits include SSE event overhead; `Limit` with an issue at
+`/limits/response_bytes` distinguishes this from a caller input/token limit.
+No partial text or function proposals are returned on that failure.
+
 **Version:** 0.2.0
 **Date:** 2026-10-27
 **Status:** Active — experimental public surface

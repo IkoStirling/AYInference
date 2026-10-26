@@ -55,6 +55,14 @@ struct NativeFixture {
 Request nativeRequest(){Request req;req.messages={{"system","Return JSON or call a declared function"},{"user","read this"}};req.tools={{"read_file","Read an approved file",parameters}};req.outputSchema=R"({"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}},"additionalProperties":false})";return req;}
 }
 TEST_SUITE(NativeFunctionTools)
+TEST_CASE(wire_response_limit_is_distinguished_and_never_returns_partial_proposals){
+    NativeFixture fixture;
+    for(const auto protocol:{Protocol::ChatCompletions,Protocol::Responses})for(const bool stream:{false,true}){
+        auto profile=fixture.profile(protocol);profile.maxResponseBytes=16;auto request=nativeRequest();if(stream)request.onText=[](auto){return true;};
+        const auto result=invoke(profile,request);CHECK(result.status==Status::Limit);CHECK(result.text.empty()&&result.toolCalls.empty());
+        CHECK(!result.issues.empty());CHECK(result.issues[0].code=="response_bytes");
+    }
+}
 TEST_CASE(native_calls_do_not_require_final_text_schema_support_or_parse_tool_like_prose){
     NativeFixture fixture;for(const auto protocol:{Protocol::ChatCompletions,Protocol::Responses}){
         auto profile=fixture.profile(protocol);profile.supportsJsonSchema=false;auto req=nativeRequest();req.outputSchema.clear();

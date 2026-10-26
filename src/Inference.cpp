@@ -200,7 +200,7 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         auto response = net::http::perform(wire); result.httpStatus = response.httpStatus;
         if (userStopped || cancelled(request)) return failure(Status::Cancelled);
         if (response.status == net::http::Status::Timeout) return failure(Status::Timeout);
-        if (response.status == net::http::Status::Limit) return failure(Status::Limit);
+        if (response.status == net::http::Status::Limit) { result.issues.push_back({"/limits/response_bytes","response_bytes"}); return failure(Status::Limit); }
         if (malformed) return failure(Status::Provider);
         if(unsupportedTool)return failure(Status::Unsupported);
         if(response.status==net::http::Status::Cancelled)return failure(Status::Cancelled);
