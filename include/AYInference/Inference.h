@@ -34,14 +34,29 @@ struct ModelProfile {
     /// Optional explicit HTTP proxy or opt-in Windows manual proxy configuration.
     std::string proxyOrigin;
     bool useSystemProxy = false;
+    /// Explicit opt-in to standard function tool proposals. The engine validates
+    /// their arguments against caller declarations and never executes a tool.
+    bool supportsToolCalls = false;
 };
+struct ToolDefinition {
+    std::string name, description, parameters;
+    bool strict = false;
+};
+struct ToolCall { std::string id, name, arguments; };
 struct ImageInput {
     /// Bounded data:image/{jpeg,png,webp,gif};base64,... only. This API never
     /// fetches an arbitrary image URL or exposes a local file path to a provider.
     std::string dataUrl;
     std::string detail = "auto"; // auto / low / high
 };
-struct Message { std::string role, text; std::vector<ImageInput> images; };
+struct Message {
+    std::string role, text;
+    std::vector<ImageInput> images;
+    /// Assistant function-call history; must be followed by matching tool results.
+    std::vector<ToolCall> toolCalls;
+    /// For role=tool only. Images remain separate user-message observations.
+    std::string toolCallId;
+};
 struct Request {
     std::vector<Message> messages;
     std::string outputSchema;
@@ -51,6 +66,9 @@ struct Request {
     std::function<bool()> cancelled;
     /// Tentative text only. Must not execute proposals; consume Result after validation.
     std::function<bool(std::string_view)> onText;
+    /// Explicit function declarations; requires supportsToolCalls. Parameters
+    /// use the supported object-schema subset. No dispatch or execution occurs.
+    std::vector<ToolDefinition> tools;
 };
 struct Usage {
     std::optional<std::uint64_t> inputTokens, outputTokens;
@@ -61,6 +79,9 @@ struct Result {
     std::string text, providerRequestId, model;
     Usage usage;
     std::vector<serializer::JsonValidationIssue> issues;
+    /// Structurally validated proposals, never executed or authorized by engine.
+    /// outputSchema validates final text only when no function call is returned.
+    std::vector<ToolCall> toolCalls;
     explicit operator bool() const noexcept { return status == Status::Ok; }
 };
 /// Stateless model invocation. Profiles own protocol/capability choices; business

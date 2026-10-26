@@ -1,7 +1,7 @@
 # AYInference
 
-**Version:** 0.1.0
-**Date:** 2026-10-24
+**Version:** 0.2.0
+**Date:** 2026-10-27
 **Status:** Active — experimental public surface
 **Owner:** AYInference
 
@@ -38,6 +38,26 @@ passing local validation returns `Ok`. Chat streaming requires a successful fini
 and DONE marker; Responses requires the completed event. Errors/refusals never
 return executable output. No hidden reasoning is requested, no tools execute and
 no retries or autonomous task creation occur in this module.
+
+Standard function proposals are separately opt-in through `supportsToolCalls`
+and caller-owned `Request::tools`. A definition supplies a portable name,
+description and object parameter schema. Chat Completions and Responses each
+encode their own function wire shape. Completed calls return as owned
+`Result::toolCalls` only after declaration, identity and argument validation;
+they are never executed or authorized here. `outputSchema` validates final text
+when no call is returned. Unknown tools, malformed arguments, incomplete/refused
+outputs and duplicate call IDs fail without returning any proposal. Tool-looking
+prose, DSML/XML tags and custom/server-side tool types are not interpreted.
+
+Native history uses assistant `Message::toolCalls`, followed by `role="tool"`
+messages with matching `toolCallId`. Results remain data, not system instructions.
+History names/JSON/identities and balanced correlations are checked before HTTP.
+Images remain separate user observations. Limits are128 declarations,16 calls per
+reply/history message,64-character portable names,128-byte IDs and64KiB arguments.
+Function arguments are not sent through `onText`; Responses proposals come from
+the completed response. Its complete final text is authoritative over tentative
+deltas, including provisional whitespace. Hosts still validate their own business
+permissions, persistence and execution results.
 
 `assembleContext` retains identifiers/sources and chooses stable priority fragments
 under a byte budget. Inputs must already be authorized. Byte budgets are not model

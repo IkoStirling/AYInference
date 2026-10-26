@@ -1,7 +1,7 @@
 # AYInference design
 
-**Version:** 0.1.0
-**Date:** 2026-10-24
+**Version:** 0.2.0
+**Date:** 2026-10-27
 **Status:** Active
 **Owner:** AYInference
 
@@ -17,7 +17,7 @@ by applications; each invocation creates isolated transport/parser state.
 Check budgets/capabilities/schema -> read environment credential -> encode the
 selected protocol -> bounded verified transport -> bounded envelope/SSE decoding
 -> completion/refusal checks -> local schema validation -> owned final Result.
-Failure clears final text. Streaming preview cannot serve as authorization.
+Failure clears final text and function proposals. Streaming preview cannot serve as authorization.
 Mock follows the same output validation boundary with no network or fake usage.
 
 Wire output selection is explicit: strict Schema when supported, otherwise
@@ -31,7 +31,9 @@ Invocation blocks its caller and may run in an owned AYTask job. Cancellation
 predicates must be thread-safe; preview callbacks run on that invoking thread.
 Callers own UI marshaling. Provider error bodies and credentials are not exposed
 as diagnostics or written to logs. Business proposals are never parsed/executed
-by this module. The application decides retries and persistent call audit records.
+by this module. Generic standard function envelopes are parsed only when explicitly
+declared, with parameter-schema checks; the application decides business approval,
+execution, retries and persistent call audit records.
 
 ## 4. Validation and limits
 
@@ -50,3 +52,20 @@ Chat image_url and Responses input_image are encoded; no URL downloading or
 provider capability inference. Callers may discard older frames from their prompt
 while retaining a separately governed archive. Tests use loopback providers;
 public model vision quality and provider-specific limits remain deployment checks.
+
+## 6. Standard native function envelopes
+
+`supportsToolCalls` and `Request.tools` jointly declare the callable names and
+schemas. Capability absence fails before HTTP. Input history keeps assistant call
+IDs and tool receipts balanced; no historical function is implicitly made callable
+again. Responses uses function_call/function_call_output items; Chat uses assistant
+tool_calls and tool-role messages. Only declared, bounded JSON arguments reach
+owned Result.toolCalls, with no execution. A batch fails as a whole on invalid
+output. Final text Schema applies only when no function proposal was returned.
+
+Streaming function arguments never enter the text preview. Chat deltas assemble
+IDs/names/arguments and need a successful tool_calls finish plus DONE; Responses
+reads the authoritative completed output rather than provisional arguments. Final
+response text can replace mismatching tentative text. Cancellation/refusal and
+incomplete completion clear every candidate. Unstructured tags are ordinary text,
+not an alternate execution channel.

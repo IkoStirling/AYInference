@@ -3,10 +3,12 @@
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <set>
+#include <map>
 
 namespace ayt::inference {
 namespace {
 using Json = nlohmann::json;
+#include "NativeTools.inc"
 Json boundedJson(std::string_view text) {
     serializer::JsonValidationLimits limits; limits.maxBytes = 64 * 1024 * 1024; limits.maxNodes = 262144;
     if (!serializer::validateJsonDocument(text,"true",limits)) throw std::invalid_argument("provider envelope");
@@ -63,14 +65,16 @@ struct Sse {
 }
 Result invoke(const ModelProfile& profile, const Request& request) {
     Result result; result.model = profile.model;
-    auto failure = [&](Status status) { result.status = status; result.text.clear(); return result; };
+    auto failure = [&](Status status) { result.status = status; result.text.clear(); result.toolCalls.clear(); return result; };
     try {
     if (cancelled(request)) return failure(Status::Cancelled);
     if (!profile.maxOutputTokensPerCall || profile.maxOutputTokensPerCall > 1048576 || request.maxOutputTokens > profile.maxOutputTokensPerCall) return failure(Status::Limit);
     if (request.messages.empty() || request.messages.size() > 1024 || !request.maxOutputTokens || request.maxOutputTokens > 1048576 || !profile.maxRequestBytes || profile.maxRequestBytes > 16 * 1024 * 1024 || !profile.maxResponseBytes || profile.maxResponseBytes > 64 * 1024 * 1024 || profile.timeout.count() <= 0 || profile.timeout > std::chrono::hours(1)) return failure(Status::Invalid);
     std::size_t inputBytes = request.outputSchema.size();
+    const auto declarations=toolDeclarations(profile,request,inputBytes);if(declarations!=Status::Ok)return failure(declarations);
+    const auto history=toolHistory(profile,request,inputBytes);if(history!=Status::Ok)return failure(history);
     for (const auto& message : request.messages) {
-        if (message.role != "system" && message.role != "developer" && message.role != "user" && message.role != "assistant") return failure(Status::Invalid);
+        if (message.role != "system" && message.role != "developer" && message.role != "user" && message.role != "assistant" && message.role!="tool") return failure(Status::Invalid);
         inputBytes += message.text.size(); if (inputBytes > profile.maxRequestBytes) return failure(Status::Limit);
         if(!message.images.empty()&&(!profile.supportsVision||message.role!="user"))return failure(Status::Unsupported);
         if(message.images.size()>8)return failure(Status::Limit);
@@ -103,6 +107,20 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         const bool responses = profile.protocol == Protocol::Responses;
         Json body{{"model", profile.model}, {"stream", static_cast<bool>(request.onText)}};
         Json messages = Json::array();for(const auto& message:request.messages){
+            if(message.role=="tool"){
+                if(responses)messages.push_back({{"type","function_call_output"},{"call_id",message.toolCallId},{"output",message.text}});
+                else messages.push_back({{"role","tool"},{"tool_call_id",message.toolCallId},{"content",message.text}});
+                continue;
+            }
+            if(!message.toolCalls.empty()){
+                if(responses){
+                    if(!message.text.empty())messages.push_back({{"role","assistant"},{"content",message.text}});
+                    for(const auto& call:message.toolCalls)messages.push_back({{"type","function_call"},{"call_id",call.id},{"name",call.name},{"arguments",call.arguments}});
+                }else{
+                    Json calls=Json::array();for(const auto& call:message.toolCalls)calls.push_back({{"id",call.id},{"type","function"},{"function",{{"name",call.name},{"arguments",call.arguments}}}});
+                    messages.push_back({{"role","assistant"},{"content",message.text.empty()?Json(nullptr):Json(message.text)},{"tool_calls",std::move(calls)}});
+                }continue;
+            }
             if(message.images.empty()){messages.push_back({{"role",message.role},{"content",message.text}});continue;}
             Json parts=Json::array();if(!message.text.empty())parts.push_back({{"type",responses?"input_text":"text"},{"text",message.text}});
             for(const auto& image:message.images)if(responses)parts.push_back({{"type","input_image"},{"image_url",image.dataUrl},{"detail",image.detail}});else parts.push_back({{"type","image_url"},{"image_url",{{"url",image.dataUrl},{"detail",image.detail}}}});
@@ -112,6 +130,14 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         body[responses ? "max_output_tokens" : profile.legacyMaxTokens ? "max_tokens" : "max_completion_tokens"] = request.maxOutputTokens;
         if (responses) body["store"] = false;
         else if (request.onText) body["stream_options"] = {{"include_usage",true}};
+        if(!request.tools.empty()){
+            body["tools"]=Json::array();for(const auto& tool:request.tools){
+                Json definition={{"name",tool.name},{"description",tool.description},{"parameters",Json::parse(tool.parameters)}};if(tool.strict)definition["strict"]=true;
+                if(responses){definition["type"]="function";body["tools"].push_back(std::move(definition));}
+                else body["tools"].push_back({{"type","function"},{"function",std::move(definition)}});
+            }
+            body["tool_choice"]="auto";
+        }
         if (!request.outputSchema.empty()) {
             auto schema = Json::parse(request.outputSchema);
             if (!profile.supportsJsonSchema) {
@@ -126,7 +152,8 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         if (!credential.empty()) wire.headers.emplace_back("Authorization", "Bearer " + credential);
         wire.timeout = profile.timeout; wire.maxResponseBytes = profile.maxResponseBytes; wire.cancelled = request.cancelled;
         wire.proxyOrigin=profile.proxyOrigin;wire.useSystemProxy=profile.useSystemProxy;
-        bool finished = false, doneMarker = false, refused = false, malformed = false, userStopped = false;
+        bool finished = false, doneMarker = false, refused = false, malformed = false, userStopped = false, unsupportedTool=false, toolFinish=false;
+        std::map<int,ToolCall> streamedCalls;
         Sse sse;
         sse.dispatch = [&](std::string_view data) {
             if (data == "[DONE]") { doneMarker = true; return true; }
@@ -138,8 +165,14 @@ Result invoke(const ModelProfile& profile, const Request& request) {
                     const auto type = event.value("type", "");
                     if (type == "response.output_text.delta") delta = event.at("delta").get<std::string>();
                     else if (type == "response.refusal.delta" || type == "response.refusal.done") refused = true;
-                    else if (type == "response.completed") { const auto& r = event.at("response"); finished = r.value("status", "") == "completed"; metadata(r,result,true); bool finalRefused = false; const auto full = responseText(r,finalRefused); refused = refused || finalRefused; if (result.text.empty()) delta = full; }
-                    else if (type == "response.incomplete" || type == "response.failed" || type == "error") { malformed = true; return false; }
+                    else if (type == "response.completed") {
+                        const auto& r = event.at("response");finished=r.value("status", "")=="completed";metadata(r,result,true);responseCalls(r,result.toolCalls);
+                        for(const auto& item:r.at("output"))if(item.value("type",std::string{})=="custom_tool_call")unsupportedTool=true;
+                        bool finalRefused=false;const auto full=responseText(r,finalRefused);refused=refused||finalRefused;
+                        if(!full.empty()){if(full.starts_with(result.text))delta=full.substr(result.text.size());else result.text=full;}
+                    }
+                    else if(type=="response.incomplete"){finished=false;}
+                    else if (type == "response.failed" || type == "error") { malformed = true; return false; }
                 } else {
                     if (event.contains("error")) { malformed = true; return false; }
                     metadata(event,result,false);
@@ -147,9 +180,15 @@ Result invoke(const ModelProfile& profile, const Request& request) {
                         if (choice.value("index",0) != 0) continue;
                         const auto& value = choice.at("delta");
                         if (value.contains("refusal") && !value["refusal"].is_null()) refused = true;
-                        if (value.contains("tool_calls")) { malformed = true; return false; }
+                        if(value.contains("tool_calls"))for(const auto& part:value.at("tool_calls")){
+                            if(!profile.supportsToolCalls){unsupportedTool=true;continue;}
+                            if(part.value("type",std::string("function"))!="function"){unsupportedTool=true;continue;}
+                            const auto index=part.at("index").get<int>();if(index<0||index>=16){malformed=true;return false;}
+                            auto& call=streamedCalls[index];if(part.contains("id"))call.id+=part.at("id").get<std::string>();
+                            if(part.contains("function")){const auto& function=part.at("function");if(function.contains("name"))call.name+=function.at("name").get<std::string>();if(function.contains("arguments"))call.arguments+=function.at("arguments").get<std::string>();}
+                        }
                         if (value.contains("content") && !value["content"].is_null()) delta += value["content"].get<std::string>();
-                        if (choice.contains("finish_reason") && !choice["finish_reason"].is_null()) finished = choice["finish_reason"] == "stop";
+                        if(choice.contains("finish_reason")&&!choice["finish_reason"].is_null()){toolFinish=choice["finish_reason"]=="tool_calls";finished=choice["finish_reason"]=="stop"||toolFinish;}
                     }
                 }
                 result.text += delta;
@@ -159,33 +198,41 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         };
         if (request.onText) wire.onChunk = [&](std::string_view chunk) { return sse.feed(chunk); };
         auto response = net::http::perform(wire); result.httpStatus = response.httpStatus;
-        if (userStopped || cancelled(request) || response.status == net::http::Status::Cancelled) return failure(Status::Cancelled);
+        if (userStopped || cancelled(request)) return failure(Status::Cancelled);
         if (response.status == net::http::Status::Timeout) return failure(Status::Timeout);
         if (response.status == net::http::Status::Limit) return failure(Status::Limit);
         if (malformed) return failure(Status::Provider);
+        if(unsupportedTool)return failure(Status::Unsupported);
+        if(response.status==net::http::Status::Cancelled)return failure(Status::Cancelled);
         if (!response) return failure(Status::Transport);
         if (response.httpStatus < 200 || response.httpStatus >= 300) return failure(Status::Provider);
         if (request.onText) {
             if (!sse.buffer.empty() || !sse.data.empty() || !finished || (!responses && !doneMarker)) return failure(Status::Incomplete);
+            if(!responses)for(auto& [index,call]:streamedCalls)result.toolCalls.push_back(std::move(call));
         } else {
             try {
                 const auto value = boundedJson(response.body);
                 metadata(value,result,responses);
-                if (responses) { finished = value.value("status", "") == "completed"; result.text = responseText(value, refused); }
+                if (responses) { finished = value.value("status", "") == "completed"; result.text = responseText(value, refused);responseCalls(value,result.toolCalls);for(const auto& item:value.at("output"))if(item.value("type",std::string{})=="custom_tool_call")return failure(Status::Unsupported); }
                 else {
                     const auto& choice = value.at("choices").at(0); const auto& message = choice.at("message");
                     refused = message.contains("refusal") && !message["refusal"].is_null();
-                    finished = choice.value("finish_reason", "") == "stop";
-                    if (message.contains("tool_calls")) return failure(Status::Unsupported);
+                    const auto reason=choice.value("finish_reason",std::string{});toolFinish=reason=="tool_calls";finished=reason=="stop"||toolFinish;
+                    if(message.contains("tool_calls"))for(const auto& call:message.at("tool_calls")){
+                        if(call.value("type",std::string{})!="function")return failure(Status::Unsupported);
+                        result.toolCalls.push_back({call.at("id"),call.at("function").at("name"),call.at("function").at("arguments")});
+                    }
                     if (message.contains("content") && message["content"].is_string()) result.text = message["content"].get<std::string>();
                 }
             } catch (...) { return failure(Status::Provider); }
         }
         if (refused) return failure(Status::Refused);
         if (!finished) return failure(Status::Incomplete);
+        if(toolFinish&&result.toolCalls.empty())return failure(Status::Provider);
     }
     if (cancelled(request)) return failure(Status::Cancelled);
-    if (!request.outputSchema.empty()) {
+    const auto tools=validateToolCalls(profile,request,result);if(tools!=Status::Ok)return failure(tools);
+    if (result.toolCalls.empty()&&!request.outputSchema.empty()) {
         auto validation = serializer::validateJsonDocument(result.text, request.outputSchema);
         if (!validation) { result.issues = std::move(validation.issues); return failure(Status::InvalidOutput); }
     }
