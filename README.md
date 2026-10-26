@@ -22,7 +22,14 @@ the default Chat wire field is `max_completion_tokens`.
 Requests contain caller messages, an optional output schema and an output-token
 limit. Profile request/response byte limits, per-call output-token cap and timeout
 are enforced. Token usage is optional and provider-reported; Mock does not invent
-token counts. Schema support must be explicitly declared. Unsupported schema
+token counts. Schema support must be explicitly declared. Profiles without strict
+Schema support can opt into `supportsJsonObject`: an object `outputSchema` selects
+`json_object` wire mode for Chat or Responses, while the same caller schema remains
+mandatory local validation. Strict `supportsJsonSchema` takes precedence. No
+capability inference, automatic downgrade or parsing of tool-like prose occurs.
+JSON mode requires an explicit JSON instruction in caller messages.
+See [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/)
+(accessed 2026-10-26); provider/model support must still be configured explicitly. Unsupported schema
 keywords fail before networking; provider schema restrictions may be stricter.
 
 `onText` enables streaming. Deltas are provisional: UI code may preview them, but

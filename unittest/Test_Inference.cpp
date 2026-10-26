@@ -84,6 +84,21 @@ TEST_CASE(responses_protocol_and_capability_errors_are_explicit) {
     CHECK(invoke(p,req).status == Status::CredentialMissing); CHECK(fixture.calls == calls);
     p.credentialEnvironment.clear(); p.origin = "http://example.com"; CHECK(invoke(p,req).status == Status::Invalid);
 }
+TEST_CASE(json_object_mode_is_explicit_and_keeps_local_schema_validation) {
+    ProviderFixture fixture; auto req=request();
+    for(auto protocol:{Protocol::ChatCompletions,Protocol::Responses}){
+        auto p=fixture.profile(protocol);p.supportsJsonSchema=false;p.supportsJsonObject=true;
+        CHECK(static_cast<bool>(invoke(p,req)));const auto body=fixture.lastBody();
+        const auto format=protocol==Protocol::Responses?body.at("text").at("format"):body.at("response_format");
+        CHECK(format==Json({{"type","json_object"}}));CHECK(!format.contains("schema"));
+        p.supportsJsonSchema=true;CHECK(static_cast<bool>(invoke(p,req)));const auto strict=fixture.lastBody();
+        CHECK((protocol==Protocol::Responses?strict.at("text").at("format").at("type"):strict.at("response_format").at("type"))=="json_schema");
+    }
+    auto p=fixture.profile();p.supportsJsonSchema=false;p.supportsJsonObject=true;p.model="invalid";
+    const auto rejected=invoke(p,req);CHECK(rejected.status==Status::InvalidOutput);CHECK(rejected.text.empty());
+    const auto calls=fixture.calls.load();req.outputSchema=R"({"type":"array","items":{"type":"string"}})";
+    CHECK(invoke(p,req).status==Status::Unsupported);CHECK(fixture.calls==calls);
+}
 TEST_CASE(refusals_truncation_and_provider_errors_never_become_output) {
     ProviderFixture fixture; auto p = fixture.profile(); auto req = request();
     p.model = "refused"; CHECK(invoke(p,req).status == Status::Refused);

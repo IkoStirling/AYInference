@@ -86,7 +86,10 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         auto validation = serializer::validateJsonSchema(request.outputSchema);
         if (!validation) { result.issues = std::move(validation.issues); return failure(Status::Invalid); }
         if (request.schemaName.empty() || request.schemaName.size() > 64 || !std::all_of(request.schemaName.begin(), request.schemaName.end(), [](unsigned char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-'; })) return failure(Status::Invalid);
-        if (profile.protocol != Protocol::Mock && !profile.supportsJsonSchema) return failure(Status::Unsupported);
+        if (profile.protocol != Protocol::Mock && !profile.supportsJsonSchema) {
+            if (!profile.supportsJsonObject) return failure(Status::Unsupported);
+            if (Json::parse(request.outputSchema).value("type",Json()) != "object") return failure(Status::Unsupported);
+        }
     }
     if (request.onText && !profile.supportsStreaming) return failure(Status::Unsupported);
     if (profile.protocol == Protocol::Mock) {
@@ -111,7 +114,10 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         else if (request.onText) body["stream_options"] = {{"include_usage",true}};
         if (!request.outputSchema.empty()) {
             auto schema = Json::parse(request.outputSchema);
-            if (responses) body["text"]["format"] = {{"type","json_schema"},{"name",request.schemaName},{"strict",true},{"schema",schema}};
+            if (!profile.supportsJsonSchema) {
+                if (responses) body["text"]["format"] = {{"type","json_object"}};
+                else body["response_format"] = {{"type","json_object"}};
+            } else if (responses) body["text"]["format"] = {{"type","json_schema"},{"name",request.schemaName},{"strict",true},{"schema",schema}};
             else body["response_format"] = {{"type","json_schema"},{"json_schema",{{"name",request.schemaName},{"strict",true},{"schema",schema}}}};
         }
         net::http::Request wire; wire.origin = profile.origin; wire.path = profile.basePath + (responses ? "/responses" : "/chat/completions");

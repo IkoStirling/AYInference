@@ -19,6 +19,9 @@ struct ModelProfile {
     std::string model;
     std::string credentialEnvironment;
     bool supportsJsonSchema = false;
+    /// Opt-in JSON-object wire mode when strict Schema is unavailable.
+    /// A caller-provided object schema is still validated locally.
+    bool supportsJsonObject = false;
     bool supportsStreaming = true;
     bool legacyMaxTokens = false;
     /// Explicit opt-in to user-message images. No model-name inference.

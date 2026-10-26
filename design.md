@@ -20,6 +20,11 @@ selected protocol -> bounded verified transport -> bounded envelope/SSE decoding
 Failure clears final text. Streaming preview cannot serve as authorization.
 Mock follows the same output validation boundary with no network or fake usage.
 
+Wire output selection is explicit: strict Schema when supported, otherwise
+`json_object` only when `supportsJsonObject` is declared and the caller schema
+has object type. Both modes keep the same local schema validation. No capability
+inference, implicit fallback, native-tool execution or permissive prose parsing.
+
 ## 3. Ownership and failure
 
 Invocation blocks its caller and may run in an owned AYTask job. Cancellation
