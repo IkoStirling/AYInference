@@ -68,6 +68,7 @@ Result invoke(const ModelProfile& profile, const Request& request) {
     auto failure = [&](Status status) { result.status = status; result.text.clear(); result.toolCalls.clear(); return result; };
     try {
     if (cancelled(request)) return failure(Status::Cancelled);
+    if(!profile.reasoningEffort.empty()&&profile.reasoningEffort!="none"&&profile.reasoningEffort!="minimal"&&profile.reasoningEffort!="low"&&profile.reasoningEffort!="medium"&&profile.reasoningEffort!="high"&&profile.reasoningEffort!="xhigh"&&profile.reasoningEffort!="max")return failure(Status::Invalid);
     if (!profile.maxOutputTokensPerCall || profile.maxOutputTokensPerCall > 1048576 || request.maxOutputTokens > profile.maxOutputTokensPerCall) return failure(Status::Limit);
     if (request.messages.empty() || request.messages.size() > 1024 || !request.maxOutputTokens || request.maxOutputTokens > 1048576 || !profile.maxRequestBytes || profile.maxRequestBytes > 16 * 1024 * 1024 || !profile.maxResponseBytes || profile.maxResponseBytes > 64 * 1024 * 1024 || profile.timeout.count() <= 0 || profile.timeout > std::chrono::hours(1)) return failure(Status::Invalid);
     std::size_t inputBytes = request.outputSchema.size();
@@ -130,6 +131,7 @@ Result invoke(const ModelProfile& profile, const Request& request) {
         body[responses ? "max_output_tokens" : profile.legacyMaxTokens ? "max_tokens" : "max_completion_tokens"] = request.maxOutputTokens;
         if (responses) body["store"] = false;
         else if (request.onText) body["stream_options"] = {{"include_usage",true}};
+        if(!profile.reasoningEffort.empty()){if(responses)body["reasoning"]={{"effort",profile.reasoningEffort}};else body["reasoning_effort"]=profile.reasoningEffort;}
         if(!request.tools.empty()){
             body["tools"]=Json::array();for(const auto& tool:request.tools){
                 Json definition={{"name",tool.name},{"description",tool.description},{"parameters",Json::parse(tool.parameters)}};if(tool.strict)definition["strict"]=true;

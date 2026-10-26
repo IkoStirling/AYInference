@@ -1,6 +1,6 @@
 # AYInference design
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Date:** 2026-10-27
 **Status:** Active
 **Owner:** AYInference
@@ -71,3 +71,5 @@ incomplete completion clear every candidate. Unstructured tags are ordinary text
 not an alternate execution channel.
 
 Wire response bytes include SSE framing, repeated completed-event payloads and non-visible provider channels. A transport byte-limit failure retains a response_bytes diagnostic at /limits/response_bytes and clears all partial text/proposals. The caller chooses its bounded raw-wire allowance independently from output-token and visible-text budgets.
+
+Reasoning effort is profile-owned opt-in wire metadata, with a fixed portable-label allowlist. It does not affect authorization, schema validation, output-token budgets or reasoning-channel exclusion. Empty profiles do not acquire a new wire field; callers must verify provider compatibility.

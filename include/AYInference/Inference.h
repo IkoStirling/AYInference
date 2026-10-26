@@ -37,6 +37,10 @@ struct ModelProfile {
     /// Explicit opt-in to standard function tool proposals. The engine validates
     /// their arguments against caller declarations and never executes a tool.
     bool supportsToolCalls = false;
+    /// Explicit provider-compatible effort label. Empty leaves provider default.
+    /// Responses emits reasoning.effort; Chat emits reasoning_effort. No model
+    /// inference, hidden-reasoning access, provider fallback or capability grant.
+    std::string reasoningEffort;
 };
 struct ToolDefinition {
     std::string name, description, parameters;

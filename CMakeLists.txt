@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(AYInference VERSION 0.2.0 LANGUAGES CXX)
+project(AYInference VERSION 0.3.0 LANGUAGES CXX)
 if(NOT TARGET AYNetworkHttp OR NOT TARGET AYSerializer)
     message(FATAL_ERROR "AYInference requires AYNetworkHttp and AYSerializer")
 endif()

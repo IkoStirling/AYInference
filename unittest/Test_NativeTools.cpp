@@ -55,6 +55,16 @@ struct NativeFixture {
 Request nativeRequest(){Request req;req.messages={{"system","Return JSON or call a declared function"},{"user","read this"}};req.tools={{"read_file","Read an approved file",parameters}};req.outputSchema=R"({"type":"object","required":["answer"],"properties":{"answer":{"type":"string"}},"additionalProperties":false})";return req;}
 }
 TEST_SUITE(NativeFunctionTools)
+TEST_CASE(reasoning_effort_is_explicit_validated_and_does_not_expose_reasoning){
+    NativeFixture fixture;
+    for(const auto protocol:{Protocol::ChatCompletions,Protocol::Responses}){
+        auto profile=fixture.profile(protocol);auto request=nativeRequest();auto result=invoke(profile,request);CHECK(static_cast<bool>(result));
+        CHECK(!fixture.captured().contains("reasoning")&&!fixture.captured().contains("reasoning_effort"));
+        profile.reasoningEffort="low";result=invoke(profile,request);CHECK(static_cast<bool>(result));
+        const auto wire=fixture.captured();if(protocol==Protocol::Responses)CHECK(wire.at("reasoning").at("effort")=="low");else CHECK(wire.at("reasoning_effort")=="low");
+        const auto before=fixture.calls.load();profile.reasoningEffort="arbitrary-provider-json";CHECK(invoke(profile,request).status==Status::Invalid);CHECK_INT_EQ(fixture.calls.load(),before);
+    }
+}
 TEST_CASE(wire_response_limit_is_distinguished_and_never_returns_partial_proposals){
     NativeFixture fixture;
     for(const auto protocol:{Protocol::ChatCompletions,Protocol::Responses})for(const bool stream:{false,true}){

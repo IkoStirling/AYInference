@@ -4,7 +4,7 @@ Response wire-size limits include SSE event overhead; `Limit` with an issue at
 `/limits/response_bytes` distinguishes this from a caller input/token limit.
 No partial text or function proposals are returned on that failure.
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Date:** 2026-10-27
 **Status:** Active — experimental public surface
 **Owner:** AYInference
@@ -101,3 +101,11 @@ and automatic PAC resolution are outside the current transport.
 Protocol sources, accessed 2026-10-24:
 [Structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
 [Responses migration](https://developers.openai.com/api/docs/guides/migrate-to-responses).
+
+`ModelProfile.reasoningEffort` optionally sends a validated effort label through
+`reasoning.effort` (Responses) or `reasoning_effort` (Chat). Empty preserves the
+provider default. The caller must verify model support and label semantics;
+no provider is detected and no hidden reasoning text is requested, returned as
+application content, or replayed. In particular a Chat effort label is not a
+provider-specific thinking-mode toggle. Supported portable labels are none,
+minimal, low, medium, high, xhigh and max; unknown labels fail before I/O.
