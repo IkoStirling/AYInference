@@ -33,6 +33,19 @@ void metadata(const Json& json, Result& result, bool responses) {
         const auto* out = responses ? "output_tokens" : "completion_tokens";
         if (usage.contains(in) && usage[in].is_number_unsigned()) result.usage.inputTokens = usage[in].get<std::uint64_t>();
         if (usage.contains(out) && usage[out].is_number_unsigned()) result.usage.outputTokens = usage[out].get<std::uint64_t>();
+        const auto count=[](const Json& node,const char* name)->std::optional<std::uint64_t>{
+            const auto found=node.find(name);if(found==node.end()||!found->is_number_unsigned())return {};return found->get<std::uint64_t>();
+        };
+        auto hit=count(usage,"prompt_cache_hit_tokens"),miss=count(usage,"prompt_cache_miss_tokens");
+        const auto details=usage.find(responses?"input_tokens_details":"prompt_tokens_details");
+        if(!hit&&details!=usage.end()&&details->is_object())hit=count(*details,"cached_tokens");
+        const auto total=result.usage.inputTokens;
+        if(total){
+            if((hit&&*hit>*total)||(miss&&*miss>*total)||(hit&&miss&&*hit!=*total-*miss)){hit.reset();miss.reset();}
+            else if(hit&&!miss)miss=*total-*hit;
+            else if(miss&&!hit)hit=*total-*miss;
+        }
+        result.usage.cachedInputTokens=hit;result.usage.uncachedInputTokens=miss;
     }
 }
 std::string responseText(const Json& response, bool& refused) {

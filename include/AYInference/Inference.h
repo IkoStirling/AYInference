@@ -76,6 +76,10 @@ struct Request {
 };
 struct Usage {
     std::optional<std::uint64_t> inputTokens, outputTokens;
+    /// Provider-reported input cache accounting; absent is unknown, never zero.
+    /// Chat/Responses cached-token details and DeepSeek hit/miss aliases are
+    /// supported. A missing complement is derived only from a known total.
+    std::optional<std::uint64_t> cachedInputTokens, uncachedInputTokens;
 };
 struct Result {
     Status status = Status::Invalid;

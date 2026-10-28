@@ -4,8 +4,8 @@ Response wire-size limits include SSE event overhead; `Limit` with an issue at
 `/limits/response_bytes` distinguishes this from a caller input/token limit.
 No partial text or function proposals are returned on that failure.
 
-**Version:** 0.3.0
-**Date:** 2026-10-27
+**Version:** 0.3.1
+**Date:** 2026-10-28
 **Status:** Active — experimental public surface
 **Owner:** AYInference
 
@@ -26,7 +26,15 @@ the default Chat wire field is `max_completion_tokens`.
 Requests contain caller messages, an optional output schema and an output-token
 limit. Profile request/response byte limits, per-call output-token cap and timeout
 are enforced. Token usage is optional and provider-reported; Mock does not invent
-token counts. Schema support must be explicitly declared. Profiles without strict
+token counts. `Usage.cachedInputTokens` / `uncachedInputTokens` retain optional
+provider cache accounting in streaming and non-streaming results. Chat
+`prompt_tokens_details.cached_tokens`, Responses `input_tokens_details.cached_tokens`
+and DeepSeek `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` are recognized.
+Absent accounting stays unknown; explicit zero is retained. A missing complement
+is derived only from a known input total; impossible totals discard cache metrics
+without changing response validation. Cache construction, prices and hit guarantees
+remain provider-owned. See `unittest/Test_CacheUsage.cpp` for local wire evidence.
+Schema support must be explicitly declared. Profiles without strict
 Schema support can opt into `supportsJsonObject`: an object `outputSchema` selects
 `json_object` wire mode for Chat or Responses, while the same caller schema remains
 mandatory local validation. Strict `supportsJsonSchema` takes precedence. No

@@ -1,7 +1,7 @@
 # AYInference design
 
-**Version:** 0.3.0
-**Date:** 2026-10-27
+**Version:** 0.3.1
+**Date:** 2026-10-28
 **Status:** Active
 **Owner:** AYInference
 
@@ -19,6 +19,13 @@ selected protocol -> bounded verified transport -> bounded envelope/SSE decoding
 -> completion/refusal checks -> local schema validation -> owned final Result.
 Failure clears final text and function proposals. Streaming preview cannot serve as authorization.
 Mock follows the same output validation boundary with no network or fake usage.
+
+Usage decoding preserves optional input/output totals and cached/uncached input
+counts. Provider aliases normalize into `Usage`; missing fields are unknown,
+explicit zeros stay known. A known total may supply a missing complement, never
+an invented hit rate. Cache counts exceeding or contradicting that total are
+discarded independently of output validation. The adapter neither stores prompt
+content nor changes messages, cache policy, billing or execution authority.
 
 Wire output selection is explicit: strict Schema when supported, otherwise
 `json_object` only when `supportsJsonObject` is declared and the caller schema
